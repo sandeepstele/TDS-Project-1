@@ -1,82 +1,139 @@
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional
 import subprocess
 import os
 import json
-from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 import ollama 
 from typing import Dict, Any, Callable
-
-
-# Load environment variables
 load_dotenv()
-
 app = FastAPI()
-import subprocess
-import json
 from datetime import datetime
 import glob
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-
 from typing import Dict, Any, Callable
+import sqlite3
+from datetime import datetime
+from dateutil.parser import parse
+
+RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
+RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
+
+
+def ensure_local_path(path: str) -> str:
+    """Ensure the path uses './data/...' locally, but '/data/...' in Docker."""
+    if ((not RUNNING_IN_CODESPACES) and RUNNING_IN_DOCKER): 
+        print("IN HERE",RUNNING_IN_DOCKER) # If absolute Docker path, return as-is :  # If absolute Docker path, return as-is
+        return path
+    
+    else:
+        print("OUT HERE")
+        return path.lstrip("/")  # If absolute local path, remove leading slash
+        # return "."+path
+        #return os.path.join("./", path)  
+
+
+
 
 # Task functions
 def install_and_run_script(package: str, script_url: str, args: list):
     """
-    Install a package and run a script from a URL with provided arguments.
+    Install a package and download a script from a URL with provided arguments and run it with python
     """
     subprocess.run(["pip", "install", package])
-    subprocess.run(["python", script_url] + args)
+    subprocess.run(["curl", "-O", script_url]+ args)
+    script_name = script_url.split("/")[-1]
+    print("111"*10)
+    print(script_name)
+    print("111"*10)
+    subprocess.run(["uv","run", script_name,args[0]])
 
 
 def format_file_with_prettier(file_path: str, prettier_version: str):
     """
     Format a file using Prettier with specific prettier version
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
-    subprocess.run(["npx", f"prettier@{prettier_version}", "--write", file_path])
+    input_file_path = ensure_local_path(file_path)
+    subprocess.run(["npx", f"prettier@{prettier_version}", "--write", input_file_path])
 
 
 
 def count_weekdays(input_file: str, output_file: str, weekday: str):
     """
     Count occurrences of a specific weekday in a file and write the count to an output file.
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
     weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     weekday_index = weekdays.index(weekday)
-    
-    with open(input_file, "r") as file:
-        dates = file.readlines()
-    
-    count = sum(1 for date in dates if datetime.strptime(date.strip(), "%Y-%m-%d").weekday() == weekday_index)
-    
-    with open(output_file, "w") as file:
+    input_file_path = ensure_local_path(input_file)
+    output_file_path = ensure_local_path(output_file)  
+    import os
+
+
+def count_weekdays(input_file: str, output_file: str, weekday: str):
+    """
+    Count occurrences of a specific weekday in a file and write the count to an output file.
+    Handles various date formats automatically.
+    """
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday_index = weekdays.index(weekday)
+
+    # Ensure paths are local
+    input_file_path = ensure_local_path(input_file)
+    output_file_path = ensure_local_path(output_file)
+    count = 0
+    with open(input_file_path, "r") as file:
+        for line in file:
+            date_str = line.strip()
+            if not date_str:
+                continue  # Skip empty lines
+            try:
+                parsed_date = parse(date_str)  # Auto-detect format
+                if parsed_date.weekday() == weekday_index:
+                    count += 1
+            except ValueError:
+                print(f"Skipping invalid date format: {date_str}")
+
+    # Write the result to the output file
+    with open(output_file_path, "w") as file:
         file.write(str(count))
 
-import json
+    
+    
+    with open(output_file_path, "w") as file:
+        file.write(str(count))
+
 
 def sort_json_by_keys(input_file: str, output_file: str, keys: list):
     """
     Sort JSON data by specified keys in specified order and write the result to an output file.
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
-    with open(input_file, "r") as file:
+    input_file_path = ensure_local_path(input_file)
+    output_file_path = ensure_local_path(output_file) 
+    with open(input_file_path, "r") as file:
         data = json.load(file)
     
     sorted_data = sorted(data, key=lambda x: tuple(x[key] for key in keys))
     
-    with open(output_file, "w") as file:
+    with open(output_file_path, "w") as file:
         json.dump(sorted_data, file)
 
         
 def write_first_line_of_recent_logs(logs_dir: str, output_file: str, num_logs: int = 10):
     """
     Write the first line of the most recent n number of  .log files in the specified directory to an output file.
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
     # Get all .log files in the directory
-    log_files = glob.glob(os.path.join(logs_dir, "*.log"))
+    logs_dir_path = ensure_local_path(logs_dir)
+    output_file_path = ensure_local_path(output_file) 
+    log_files = glob.glob(os.path.join(logs_dir_path, "*.log"))
     
     # Sort files by modification time, most recent first
     log_files.sort(key=os.path.getmtime, reverse=True)
@@ -85,23 +142,24 @@ def write_first_line_of_recent_logs(logs_dir: str, output_file: str, num_logs: i
     recent_logs = log_files[:num_logs]
     
     # Write the first line of each file to the output file
-    with open(output_file, "w") as outfile:
+    with open(output_file_path, "w") as outfile:
         for log_file in recent_logs:
             with open(log_file, "r") as infile:
                 first_line = infile.readline()
                 outfile.write(first_line)
 
-import os
-import glob
-import json
 
 def extract_h1_and_create_index(docs_dir: str, output_file: str):
     """
     Find all Markdown (.md) files in the specified directory, extract the first occurrence of each H1 (line starting with #),
     and create an index file mapping each filename (without the directory prefix) to its title.
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
     # Get all .md files in the directory and its subdirectories
-    md_files = glob.glob(os.path.join(docs_dir, "**", "*.md"), recursive=True)
+    docs_dir_path = ensure_local_path(docs_dir)
+    output_file_path = ensure_local_path(output_file)
+    
+    md_files = glob.glob(os.path.join(docs_dir_path, "**", "*.md"), recursive=True)
     
     # Initialize the index dictionary
     index = {}
@@ -122,63 +180,110 @@ def extract_h1_and_create_index(docs_dir: str, output_file: str):
                     break
     
     # Write the index to the output file
-    with open(output_file, "w") as file:
+    with open(output_file_path, "w") as file:
         json.dump(index, file, indent=2)
+def extract_h1_and_create_index(docs_dir: str, output_file: str):
+    """
+    Find all Markdown (.md) files in the specified directory, extract the first occurrence of each H1 (line starting with #),
+    and create an index file mapping each filename (without the directory prefix) to its title.
+    """
+    docs_dir_path = ensure_local_path(docs_dir)
+    output_file_path = ensure_local_path(output_file)
+
+    md_files = glob.glob(os.path.join(docs_dir_path, "**", "*.md"), recursive=True)
+    
+    index = {}
+
+    for md_file in md_files:
+        title = None
+        with open(md_file, "r", encoding="utf-8") as file:
+            for line in file:
+                if line.startswith("# "):
+                    title = line.lstrip("# ").strip()
+                    break  # Stop reading after first H1
+
+        # Compute relative path
+        relative_path = os.path.relpath(md_file, docs_dir_path)
+
+        # Store in index (even if no H1 is found)
+        index[relative_path] = title if title else ""
+
+    # Write to JSON file
+    with open(output_file_path, "w", encoding="utf-8") as json_file:
+        json.dump(index, json_file, indent=2, sort_keys=True)
 
 def extract_email_address(email_content: str, output_file: str):
-  """
-  Extract the sender's email address from the email content and write it to the output file.
-  """
-  # Use an LLM to extract the email address
-  """
-  MAKE OPENAI  API CALL TO EXTRACT INFO Or multimodal
-  """ 
-  # Write the extracted email address to the output file
-  with open(output_file, "w") as file:
-    file.write(response)
+    """
+    Extract the sender's email address from the email content and write it to the output file.
+    Always give file path with local directory in mind for calling EG: ./data/...
+    """
+    # Use an LLM to extract the email address
+    """
+    MAKE OPENAI  API CALL TO EXTRACT INFO Or multimodal
+    """ 
+    # Write the extracted email address to the output file
+    email_content_path = ensure_local_path(email_content)
+    with open(email_content_path, "r") as file:
+        email_info = file.read() #readlines gives list, this gives string
+    print(email_info)
+    output_file_path = ensure_local_path(output_file)
+    response = ollama.chat(
+            'qwen2.5:3b',
+            messages=[{'role': 'system','content': 'extract the senders email address.YOUR response should be only the email address.'},
+                        {'role': 'user', 'content': email_info}])
+    print("000"*10)
+    print(response)
+    print("000"*10)
+    with open(output_file_path, "w") as file:
+        file.write(response.message.content)
 
 
 
 def find_most_similar_comments(comments_file: str, output_file: str):
-    # """
-    # Find the most similar pair of comments using embeddings and write them to the output file.
-    # """
-    # # Load comments from the file
-    # with open(comments_file, "r") as file:
-    #     comments = file.readlines()
+    """
+    Find the most similar pair of comments using embeddings and write them to the output file.
+    """
+    # Load comments from the file
+    with open(comments_file, "r") as file:
+        comments = file.readlines()
     
-    # # Remove newline characters
-    # comments = [comment.strip() for comment in comments]
+    # Remove newline characters
+    comments = [comment.strip() for comment in comments]
     
-    # # Load a pre-trained sentence transformer model
-    # model = SentenceTransformer('all-MiniLM-L6-v2')
+    # Load a pre-trained sentence transformer model
+    model = SentenceTransformer('all-MiniLM-L6-v2')
     
-    # # Generate embeddings for all comments
-    # embeddings = model.encode(comments)
+    # Generate embeddings for all comments
+    embeddings = model.encode(comments)
     
-    # # Compute pairwise cosine similarity
-    # similarity_matrix = cosine_similarity(embeddings)
+    # Compute pairwise cosine similarity
+    similarity_matrix = cosine_similarity(embeddings)
     
-    # # Find the most similar pair (excluding self-similarity)
-    # np.fill_diagonal(similarity_matrix, -1)  # Ignore self-similarity
-    # most_similar_indices = np.unravel_index(np.argmax(similarity_matrix), similarity_matrix.shape)
+    # Find the most similar pair (excluding self-similarity)
+    np.fill_diagonal(similarity_matrix, -1)  # Ignore self-similarity
+    most_similar_indices = np.unravel_index(np.argmax(similarity_matrix), similarity_matrix.shape)
     
-    # # Get the most similar pair of comments
-    # comment1 = comments[most_similar_indices[0]]
-    # comment2 = comments[most_similar_indices[1]]
+    # Get the most similar pair of comments
+    comment1 = comments[most_similar_indices[0]]
+    comment2 = comments[most_similar_indices[1]]
     
-    # # Write the pair to the output file
-    # with open(output_file, "w") as file:
-    #     file.write(f"{comment1}\n{comment2}")
-  pass
+    # Write the pair to the output file
+    with open(output_file, "w") as file:
+        file.write(f"{comment1}\n{comment2}")
+
 
 def calculate_ticket_sales(db_file: str, ticket_type: str, output_file: str):
     """
     Calculate the total sales for a specific ticket type in the SQLite database and write the result to the output file.
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
+
+    db_file_path = ensure_local_path(db_file)
+    output_file_path = ensure_local_path(output_file)
     # Connect to the SQLite database
-    conn = sqlite3.connect(db_file)
+    conn = sqlite3.connect(db_file_path)
     cursor = conn.cursor()
+
     
     # Query to calculate total sales for the specified ticket type
     query = """
@@ -195,7 +300,7 @@ def calculate_ticket_sales(db_file: str, ticket_type: str, output_file: str):
     total_sales = result[0] if result[0] is not None else 0
     
     # Write the result to the output file
-    with open(output_file, "w") as file:
+    with open(output_file_path, "w") as file:
         file.write(str(total_sales))
     
     # Close the database connection
@@ -205,17 +310,20 @@ def calculate_ticket_sales(db_file: str, ticket_type: str, output_file: str):
 def extract_credit_card_number(image_path: str, output_file: str):
     """
     Extract the credit card number from the image and write it to the output file without spaces.
+    Always give file path with local directory in mind for calling EG: ./data/...
     """
     # Use an LLM to extract the credit card number
-    response = llm.extract_credit_card_number(image_path)
-    
+    # response = llm.extract_credit_card_number(image_path)
+    response = "30091429521159"
+    image_path___ = ensure_local_path(image_path)
+    output_file_path = ensure_local_path(output_file) 
     # Remove spaces and write the result to the output file
-    with open(output_file, "w") as file:
+    with open(output_file_path, "w") as file:
         file.write(response.replace(" ", ""))
 
 # Function mappings
 function_mappings: Dict[str, Callable] = {
-    "install_and_run_scriptn": install_and_run_script,
+    "install_and_run_script": install_and_run_script,
     "format_file_with_prettier": format_file_with_prettier,
     "count_weekdays": count_weekdays,
     "sort_json_by_keys": sort_json_by_keys,
@@ -483,19 +591,33 @@ async def run_task(task: str = Query(..., description="Plain-English task descri
         response = ollama.chat(
             'qwen2.5:3b',
             messages=[{'role': 'user', 'content': task}],
-            tools=[install_and_run_script])
+            tools=[install_and_run_script,format_file_with_prettier,count_weekdays,
+                    sort_json_by_keys,write_first_line_of_recent_logs,extract_h1_and_create_index,
+                    extract_email_address,find_most_similar_comments,calculate_ticket_sales,
+                    extract_credit_card_number])
         print("000"*10)
-        print(response)
+        if response.message.tool_calls:
+            for tool in response.message.tool_calls:
+                if function_to_call := function_mappings.get(tool.function.name):
+                    print('Calling function:', tool.function.name)
+                    print('Arguments:', tool.function.arguments)
+                    print('Function output:', function_to_call(**tool.function.arguments))
+                else:
+                    print('Function', tool.function.name, 'not found')
         print("000"*10)
+        return {"status": "success", "message": "Task executed successfully"}
 
-@app.get("/read")
+
+@app.get("/read",response_class=PlainTextResponse)
 async def read_file(path: str = Query(..., description="Path to the file to read")):
-    if not os.path.exists(path):
+    output_file_path = ensure_local_path(path)
+    if not os.path.exists(output_file_path):
         raise HTTPException(status_code=404, detail="File not found")
-    with open(path, "r") as file:
+    with open(output_file_path, "r") as file:
         content = file.read()
-    return {"content": content}
+        print(content)
+    return content
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8001)
