@@ -20,10 +20,11 @@ import sqlite3
 from datetime import datetime
 from dateutil.parser import parse
 from generate_schema import (
+format_file_with_prettier,
 query_gpt,
 query_gpt_image, 
 query_database, 
-extract_specific_text, 
+extract_specific_text_using_llm, 
 get_embeddings, 
 get_similar_text_using_embeddings, 
 extract_text_from_image, 
@@ -68,7 +69,7 @@ def install_and_run_script2(package: str, script_url: str, args: list):
     subprocess.run(["uv","run", script_name,args[0]])
 
 
-def format_file_with_prettier(file_path: str, prettier_version: str):
+def format_file_with_prettier2(file_path: str, prettier_version: str):
     """
     Format a file using Prettier with specific prettier version
     
@@ -236,7 +237,7 @@ def extract_email_address(email_content: str, output_file: str):
     print(email_info)
     output_file_path = ensure_local_path(output_file)
     response = ollama.chat(
-            'qwen2.5:3b',
+            'qwen2.5-coder:7b-instruct-q4_1',
             messages=[{'role': 'system','content': 'extract the senders email address.YOUR response should be only the email address.'},
                         {'role': 'user', 'content': email_info}])
     print("000"*10)
@@ -346,7 +347,7 @@ function_mappings: Dict[str, Callable] = {
 "install_and_run_script": install_and_run_script, 
 "format_file_with_prettier": format_file_with_prettier,
 "query_database":query_database, 
-"extract_specific_text":extract_specific_text, 
+"extract_specific_text_using_llm":extract_specific_text_using_llm, 
 'get_embeddings':get_embeddings, 
 'get_similar_text_using_embeddings':get_similar_text_using_embeddings, 
 'extract_text_from_image':extract_text_from_image, 
@@ -611,10 +612,12 @@ async def run_task(task: str = Query(..., description="Plain-English task descri
     # except Exception as e:
     #     raise HTTPException(status_code=500, detail=str(e))
     response = ollama.chat(
-            'qwen2.5:3b',
+            'qwen2.5-coder:7b-instruct-q4_1',
             messages=[{'role': 'user', 'content': task}],
-            tools=[query_gpt,query_gpt_image, query_database, extract_specific_text, get_embeddings, get_similar_text_using_embeddings, extract_text_from_image, extract_specific_content_and_create_index, process_and_write_logfiles, sort_json_by_keys, count_occurrences, install_and_run_script])
+            tools=[query_database,format_file_with_prettier, extract_specific_text_using_llm, get_embeddings, get_similar_text_using_embeddings, extract_text_from_image, extract_specific_content_and_create_index, process_and_write_logfiles, sort_json_by_keys, count_occurrences, install_and_run_script])
+             #tools=[format_file_with_prettier, install_and_run_script])
     print("000"*10)
+    print("IN POST with task:",task)
     if response.message.tool_calls:
         for tool in response.message.tool_calls:
                 if function_to_call := function_mappings.get(tool.function.name):
@@ -623,6 +626,7 @@ async def run_task(task: str = Query(..., description="Plain-English task descri
                     print('Function output:', function_to_call(**tool.function.arguments))
                 else:
                     print('Function', tool.function.name, 'not found')
+    print("IN POST")
     print("000"*10)
     return {"status": "success", "message": "Task executed successfully"}
 
