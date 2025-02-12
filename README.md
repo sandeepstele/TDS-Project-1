@@ -1,4 +1,5 @@
 # TDS-Project-1
+- Create Codespaces on evaulate branch and do the following
 - first install uv , then create enviroment and then uv pip install -r requirements.txt
 - then install ollama and olllama serve and then ollama pull qwen2.5 model
 - then cd into app and uvicorn main:app --reload and in another terminal run ollama model and yet in another terminal run evaluate script(modified for testing)
