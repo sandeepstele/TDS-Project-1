@@ -19,6 +19,21 @@ from typing import Dict, Any, Callable
 import sqlite3
 from datetime import datetime
 from dateutil.parser import parse
+from generate_schema import (
+query_gpt,
+query_gpt_image, 
+query_database, 
+extract_specific_text, 
+get_embeddings, 
+get_similar_text_using_embeddings, 
+extract_text_from_image, 
+extract_specific_content_and_create_index, 
+process_and_write_logfiles, 
+sort_json_by_keys, 
+count_occurrences, 
+install_and_run_script
+
+)
 
 RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
 RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
@@ -40,7 +55,7 @@ def ensure_local_path(path: str) -> str:
 
 
 # Task functions
-def install_and_run_script(package: str, script_url: str, args: list):
+def install_and_run_script2(package: str, script_url: str, args: list):
     """
     Install a package and download a script from a URL with provided arguments and run it with python
     """
@@ -56,23 +71,16 @@ def install_and_run_script(package: str, script_url: str, args: list):
 def format_file_with_prettier(file_path: str, prettier_version: str):
     """
     Format a file using Prettier with specific prettier version
-    Always give file path with local directory in mind for calling EG: ./data/...
+    
+    ARGS:
+        file_path: The path to the file to format.  
+        prettier_version: The version of Prettier to use.
     """
     input_file_path = ensure_local_path(file_path)
     subprocess.run(["npx", f"prettier@{prettier_version}", "--write", input_file_path])
 
 
 
-def count_weekdays(input_file: str, output_file: str, weekday: str):
-    """
-    Count occurrences of a specific weekday in a file and write the count to an output file.
-    Always give file path with local directory in mind for calling EG: ./data/...
-    """
-    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    weekday_index = weekdays.index(weekday)
-    input_file_path = ensure_local_path(input_file)
-    output_file_path = ensure_local_path(output_file)  
-    import os
 
 
 def count_weekdays(input_file: str, output_file: str, weekday: str):
@@ -109,7 +117,7 @@ def count_weekdays(input_file: str, output_file: str, weekday: str):
         file.write(str(count))
 
 
-def sort_json_by_keys(input_file: str, output_file: str, keys: list):
+def sort_json_by_keys2(input_file: str, output_file: str, keys: list):
     """
     Sort JSON data by specified keys in specified order and write the result to an output file.
     Always give file path with local directory in mind for calling EG: ./data/...
@@ -149,39 +157,39 @@ def write_first_line_of_recent_logs(logs_dir: str, output_file: str, num_logs: i
                 outfile.write(first_line)
 
 
-def extract_h1_and_create_index(docs_dir: str, output_file: str):
-    """
-    Find all Markdown (.md) files in the specified directory, extract the first occurrence of each H1 (line starting with #),
-    and create an index file mapping each filename (without the directory prefix) to its title.
-    Always give file path with local directory in mind for calling EG: ./data/...
-    """
-    # Get all .md files in the directory and its subdirectories
-    docs_dir_path = ensure_local_path(docs_dir)
-    output_file_path = ensure_local_path(output_file)
+# def extract_h1_and_create_index(docs_dir: str, output_file: str):
+#     """
+#     Find all Markdown (.md) files in the specified directory, extract the first occurrence of each H1 (line starting with #),
+#     and create an index file mapping each filename (without the directory prefix) to its title.
+#     Always give file path with local directory in mind for calling EG: ./data/...
+#     """
+#     # Get all .md files in the directory and its subdirectories
+#     docs_dir_path = ensure_local_path(docs_dir)
+#     output_file_path = ensure_local_path(output_file)
     
-    md_files = glob.glob(os.path.join(docs_dir_path, "**", "*.md"), recursive=True)
+#     md_files = glob.glob(os.path.join(docs_dir_path, "**", "*.md"), recursive=True)
     
-    # Initialize the index dictionary
-    index = {}
+#     # Initialize the index dictionary
+#     index = {}
     
-    for md_file in md_files:
-        with open(md_file, "r") as file:
-            # Read the file line by line
-            for line in file:
-                # Check if the line starts with # (H1)
-                if line.startswith("# "):
-                    # Extract the title (remove the # and leading/trailing whitespace)
-                    title = line.lstrip("# ").strip()
-                    # Get the relative path of the file (without the docs_dir prefix)
-                    relative_path = os.path.relpath(md_file, docs_dir)
-                    # Add the file and its title to the index
-                    index[relative_path] = title
-                    # Move to the next file after finding the first H1
-                    break
+#     for md_file in md_files:
+#         with open(md_file, "r") as file:
+#             # Read the file line by line
+#             for line in file:
+#                 # Check if the line starts with # (H1)
+#                 if line.startswith("# "):
+#                     # Extract the title (remove the # and leading/trailing whitespace)
+#                     title = line.lstrip("# ").strip()
+#                     # Get the relative path of the file (without the docs_dir prefix)
+#                     relative_path = os.path.relpath(md_file, docs_dir)
+#                     # Add the file and its title to the index
+#                     index[relative_path] = title
+#                     # Move to the next file after finding the first H1
+#                     break
     
-    # Write the index to the output file
-    with open(output_file_path, "w") as file:
-        json.dump(index, file, indent=2)
+#     # Write the index to the output file
+#     with open(output_file_path, "w") as file:
+#         json.dump(index, file, indent=2)
 def extract_h1_and_create_index(docs_dir: str, output_file: str):
     """
     Find all Markdown (.md) files in the specified directory, extract the first occurrence of each H1 (line starting with #),
@@ -322,21 +330,35 @@ def extract_credit_card_number(image_path: str, output_file: str):
         file.write(response.replace(" ", ""))
 
 # Function mappings
+# function_mappings: Dict[str, Callable] = {
+#     "install_and_run_script": install_and_run_script,
+#     "format_file_with_prettier": format_file_with_prettier,
+#     "count_weekdays": count_weekdays,
+#     "sort_json_by_keys": sort_json_by_keys,
+#     "write_first_line_of_recent_logs": write_first_line_of_recent_logs,
+#     "extract_h1_and_create_index": extract_h1_and_create_index,
+#     "extract_email_address": extract_email_address,
+#     "find_most_similar_comments": find_most_similar_comments,
+#     "calculate_ticket_sales": calculate_ticket_sales,
+#     "extract_credit_card_number": extract_credit_card_number
+# }
 function_mappings: Dict[str, Callable] = {
-    "install_and_run_script": install_and_run_script,
-    "format_file_with_prettier": format_file_with_prettier,
-    "count_weekdays": count_weekdays,
-    "sort_json_by_keys": sort_json_by_keys,
-    "write_first_line_of_recent_logs": write_first_line_of_recent_logs,
-    "extract_h1_and_create_index": extract_h1_and_create_index,
-    "extract_email_address": extract_email_address,
-    "find_most_similar_comments": find_most_similar_comments,
-    "calculate_ticket_sales": calculate_ticket_sales,
-    "extract_credit_card_number": extract_credit_card_number
+"install_and_run_script": install_and_run_script, 
+"format_file_with_prettier": format_file_with_prettier,
+"query_database":query_database, 
+"extract_specific_text":extract_specific_text, 
+'get_embeddings':get_embeddings, 
+'get_similar_text_using_embeddings':get_similar_text_using_embeddings, 
+'extract_text_from_image':extract_text_from_image, 
+"extract_specific_content_and_create_index":extract_specific_content_and_create_index, 
+"process_and_write_logfiles":process_and_write_logfiles, 
+"sort_json_by_keys":sort_json_by_keys, 
+'count_occurrences':count_occurrences
 }
+
 # Function schemas for OpenAI
 # function_schemas = [{
-#   "name": "install_and_run_script",
+#   "name": "install_and_run_script2",
 #   "description": "Install a package and run a script from a URL with provided arguments.",
 #   "parameters": {
 #     "type": "object",
@@ -588,24 +610,21 @@ async def run_task(task: str = Query(..., description="Plain-English task descri
     #     return {"status": "success", "message": "Task executed successfully"}
     # except Exception as e:
     #     raise HTTPException(status_code=500, detail=str(e))
-        response = ollama.chat(
+    response = ollama.chat(
             'qwen2.5:3b',
             messages=[{'role': 'user', 'content': task}],
-            tools=[install_and_run_script,format_file_with_prettier,count_weekdays,
-                    sort_json_by_keys,write_first_line_of_recent_logs,extract_h1_and_create_index,
-                    extract_email_address,find_most_similar_comments,calculate_ticket_sales,
-                    extract_credit_card_number])
-        print("000"*10)
-        if response.message.tool_calls:
-            for tool in response.message.tool_calls:
+            tools=[query_gpt,query_gpt_image, query_database, extract_specific_text, get_embeddings, get_similar_text_using_embeddings, extract_text_from_image, extract_specific_content_and_create_index, process_and_write_logfiles, sort_json_by_keys, count_occurrences, install_and_run_script])
+    print("000"*10)
+    if response.message.tool_calls:
+        for tool in response.message.tool_calls:
                 if function_to_call := function_mappings.get(tool.function.name):
                     print('Calling function:', tool.function.name)
                     print('Arguments:', tool.function.arguments)
                     print('Function output:', function_to_call(**tool.function.arguments))
                 else:
                     print('Function', tool.function.name, 'not found')
-        print("000"*10)
-        return {"status": "success", "message": "Task executed successfully"}
+    print("000"*10)
+    return {"status": "success", "message": "Task executed successfully"}
 
 
 @app.get("/read",response_class=PlainTextResponse)
