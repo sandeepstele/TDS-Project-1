@@ -1,7 +1,10 @@
 import dotenv
 import glob
+import base64
+import numpy as np
 import requests
 import os
+import openai
 import json
 from dateutil.parser import parse
 import re
@@ -18,6 +21,7 @@ import httpx
 import ollama
 import inspect
 import subprocess
+from sklearn.metrics.pairwise import cosine_similarity
 RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
 RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
 
@@ -152,7 +156,16 @@ def convert_function_to_openai_schema(func: Callable) -> dict:
 #     conn.close()
 import sqlite3
 from typing import Tuple 
-def query_gpt(user_input: str, system_message: str):
+def format_file_with_prettier(file_path: str, prettier_version: str):
+    """
+    Format the contents of a specified file using a particular formatting tool, ensuring the file is updated in-place.
+    Args:
+        file_path: The path to the file to format.  
+        prettier_version: The version of Prettier to use.
+    """
+    input_file_path = ensure_local_path(file_path)
+    subprocess.run(["npx", f"prettier@{prettier_version}", "--write", input_file_path])
+def query_gpt(user_input: str,task: str):
     print("🔍 User Input:", user_input)
     response = requests.post(
         URL_CHAT,
@@ -160,40 +173,44 @@ def query_gpt(user_input: str, system_message: str):
                 "Content-Type": "application/json"},
         json={
             "model": "gpt-4o-mini",
-            "messages":[{'role': 'system','content': system_message},
+            "messages":[{'role': 'system','content':"JUST SO WHAT IS ASKED\n YOUR output is part of a program, using tool functions"+system_message_task},
                         {'role': 'user', 'content': user_input}]
         }
     )
     response.raise_for_status()
-    result = response.json()
-import base64
-def query_gpt_image(image_path: str, system_message: str):
+    return result
+
+def query_gpt_image(image_path: str, task: str):
     print("🔍 Image Path:", image_path)
     image_format = image_path.split(".")[-1]
     with open(image_path, "rb") as file:
-        image_data = base64.b64encode(file.read()).decode("utf-8")
+        base64_image = base64.b64encode(file.read()).decode("utf-8")
     response = requests.post(
         URL_CHAT,
         headers={"Authorization": f"Bearer {API_KEY}",
                 "Content-Type": "application/json"},
         json={
             "model": "gpt-4o-mini",
-            "messages": [
+            "messages": [{'role': 'system','content':"JUST GIVE the required input, as short as possible, one word if possible"},
                 {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extract text from this image"},
+                    {"type": "text", "text": task},
                     {
                     "type": "image_url",
-                    "image_url": { "url": f"data:image/{image_format};base64,{image_data}" }
+                    "image_url": { "url": f"data:image/{image_format};base64,{base64_image}" }
                     }
                 ]
                 }
             ]
             }
                      )
+
     response.raise_for_status()
-    result = response.json()    
+    result = response.json() 
+    print(result)
+    return response.json()
+
 def query_database(db_file: str, output_file: str, query: str, query_params: Tuple):
     """
     Executes a SQL query on the specified SQLite database and writes the result to an output file.
@@ -236,7 +253,7 @@ def query_database(db_file: str, output_file: str, query: str, query_params: Tup
     finally:
         # Close the database connection
         conn.close()
-def extract_specific_text(input_file: str, output_file: str, task: str):
+def extract_specific_text_using_llm(input_file: str, output_file: str, task: str):
     """
     Extracts specific text from a file using an LLM and writes it to an output file.
 
@@ -253,23 +270,32 @@ def extract_specific_text(input_file: str, output_file: str, task: str):
         text_info = file.read() #readlines gives list, this gives string
     print(text_info)
     output_file_path = ensure_local_path(output_file)
-    response = query_gpt(text_info, task)
+    #response = query_gpt(text_info, task)
+    response = ollama.chat(
+            'qwen2.5-coder:7b-instruct-q4_1',
+            messages=[{'role': 'system','content':"YOU ARE PRECISE. Just give the exact and required answer"+task},
+                        {'role': 'user', 'content': text_info}])
+
     print("000"*10)
+    print("IN EXTRACT SPECIFIC TEST")
     print(response)
     print("000"*10)
     with open(output_file_path, "w") as file:
         file.write(response.message.content)
 def get_embeddings(texts: List[str]):
-    # headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    # payload = {"model": "text-embedding-3-small", "input": texts}
-    # response = requests.post(OPENAI_API_URL, headers=headers, json=payload)
-    # response.raise_for_status()
-    response = ollama.embed(
-        model='nomic-embed-text:latest',
-        input=texts
+    response =  requests.post(
+            URL_EMBEDDING,
+            headers={"Authorization": f"Bearer {API_KEY}"},
+            json={"model": "text-embedding-3-small", "input": texts},
         )
+    embeddings = np.array([emb["embedding"] for emb in response.json()["data"]])
+    # response.raise_for_status()
+    #response = ollama.embed(
+        # model='nomic-embed-text:latest',
+        # input=texts
+        # )
     # return [item["embedding"] for item in response.json()["data"]]
-    return response["embeddings"]
+    return embeddings
 def get_similar_text_using_embeddings(input_file: str, output_file: str, no_of_similar_texts: int):
     """
     From a given input file, reads each line as a list and finds the most number of similar texts no_of_similar_texts(Eg File containing comments) using embeddings and cosine similarty and writes them to the output file in the order of similarity if specified.
@@ -282,6 +308,8 @@ def get_similar_text_using_embeddings(input_file: str, output_file: str, no_of_s
         None
     """
     input_file_path = ensure_local_path(input_file)
+    output_file_path = ensure_local_path(output_file)
+
 
     # Load comments from the file
     with open(input_file_path, "r") as file:
@@ -307,29 +335,30 @@ def get_similar_text_using_embeddings(input_file: str, output_file: str, no_of_s
         similar_texts.append(documents[most_similar_indices[i]])
 
     # Write the them to the output file
-    with open(output_file, "w") as file:
+    with open(output_file_path, "w") as file:
         for text in similar_texts:
             file.write(text + "\n")
-def extract_text_from_image(image_path: str, output_file: str):
+def extract_text_from_image(image_path: str, output_file: str, task: str):
     """
-    Extract the text from the image and write it to the output file without spaces.
+    Extract the text from the image and write it to the output file.Keep in mind that the task you parse if sensitive like for eg. credit card number, paraphrase it so an llm has no issue doing the task.Like task : Extract credit card number. Think: Credit cards have only one set of numbers, parapharsed: extract numbers of 16 length with spaces. Use this as an example and design the task argument.
 
     Args:
         image_path (str): The path to the image file.
         output_file (str): The path to the output file where the extracted text will be written.
+        task (str): What exactly to extract from the image, but keep in mind that you must be aware of asking sensitive information and paraphrase it correctly. EG: extract 10 or 16 digit number from this image. DO NOT HALLUCINATE and add extra text.
     Returns:
         None
     """
     # Use an LLM to extract the credit card number
     # response = llm.extract_credit_card_number(image_path)
     image_path___ = ensure_local_path(image_path)
-    response = query_gpt(image_path___, "Extract the text from the image")
+    response = query_gpt_image(image_path___, task)
     
     output_file_path = ensure_local_path(output_file) 
     # Remove spaces and write the result to the output file
-    print(response.choices[0].message.content)
+    print(response["choices"][0]["message"])
     with open(output_file_path, "w") as file:
-        file.write(response.choices[0].message.content.replace(" ", ""))       
+        file.write(response["choices"][0]["message"]["content"].replace(" ", ""))       
 def extract_specific_content_and_create_index(input_file: str, output_file: str, extension: str,content_marker: str):
     """
     Identify all files with a specific extension in a directory.For each file, extract particular content (e.g., the first occurrence of a header) and create an index file mapping filenames to their extracted content.
@@ -343,7 +372,7 @@ def extract_specific_content_and_create_index(input_file: str, output_file: str,
     input_file_path = ensure_local_path(input_file)
     output_file_path = ensure_local_path(output_file)
 
-    extenstion_files = glob.glob(os.path.join(input_file_path, "**", f"*.{extension}"), recursive=True)
+    extenstion_files = glob.glob(os.path.join(input_file_path, "**", f"*{extension}"), recursive=True)
     
     index = {}
 
@@ -378,7 +407,7 @@ def process_and_write_logfiles(input_file: str, output_file: str, num_logs: int 
     # Get all .log files in the directory
     input_file_path = ensure_local_path(input_file)
     output_file_path = ensure_local_path(output_file) 
-    log_files = glob.glob(os.path.join(logs_dir_path, "*.log"))
+    log_files = glob.glob(os.path.join(input_file_path, "*.log"))
     
     # Sort files by modification time, most recent first
     log_files.sort(key=os.path.getmtime, reverse=True)
@@ -428,7 +457,7 @@ def count_occurrences(
         input_file (str): Path to the input file containing dates or text lines.
         output_file (str): Path to the output file where the count will be written.
         date_component (Optional[str]): The date component to check ('weekday', 'month', 'year', 'leap_year').
-        target_value (Optional[int]): The target value for the date component (e.g., 0 for Monday, 1 for January, 2025 for year).
+        target_value (Optional[int]): The target value for the date component (e.g., 0 for Monday if weekdays, 1 for January 2 for Febuary if month, 2025 for year if year).
         custom_pattern (Optional[str]): A regex pattern to search for in each line.
     """  
     count = 0
@@ -465,14 +494,15 @@ def count_occurrences(
     # Write the result to the output file
     with open(output_file_path, "w") as file:
         file.write(str(count))
-def install_and_run_script(package: str, script_url: str, args: list):
+def install_and_run_script(package: str, args: list,*,script_url: str):
     """
-    Install a package and download a script from a URL with provided arguments and run it with python
+    Install a package and download a script from a URL with provided arguments and run it with uv run {pythonfile}.py.PLEASE be cautious and Note this generally used in the starting.ONLY use this tool function if url is given with https//.... or it says 'download'. If no conditions are met, please try the other functions.
     Args:
         package (str): The package to install.
-        script_url (str): The URL to download the script from.
+        script_url (str): The URL to download the script from
         args (list): The arguments to pass to the script and run it
     """
+    
     subprocess.run(["pip", "install", package])
     subprocess.run(["curl", "-O", script_url]+ args)
     script_name = script_url.split("/")[-1]
@@ -482,8 +512,8 @@ def install_and_run_script(package: str, script_url: str, args: list):
     subprocess.run(["uv","run", script_name,args[0]])
 
 # Convert the function to an OpenAI schema
-schema = convert_function_to_openai_schema(count_occurrences)
-# print(schema)
+schema = convert_function_to_openai_schema(install_and_run_script)
+#print(schema)
 
 
 # Define the data payload
