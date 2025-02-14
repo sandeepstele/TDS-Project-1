@@ -19,7 +19,6 @@ import logging
 import subprocess
 import glob
 import sqlite3
-import requests
 from bs4 import BeautifulSoup
 import markdown
 import csv
@@ -40,7 +39,7 @@ from typing import Callable, get_type_hints, Dict, Any, Tuple,Optional,List
 from pydantic import create_model, BaseModel
 dotenv.load_dotenv()
 
-API_KEY = os.getenv("OPEN_AI_PROXY_TOKEN")
+API_KEY = os.getenv("AIPROXY_TOKEN")
 URL_CHAT = os.getenv("OPEN_AI_PROXY_URL")
 URL_EMBEDDING = os.getenv("OPEN_AI_EMBEDDING_URL")
 RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
