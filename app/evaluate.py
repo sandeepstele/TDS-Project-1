@@ -6,6 +6,7 @@
 #     "numpy",
 #     "pillow",
 #     "python-dateutil",
+#      "python-dotenv",
 # ]
 # ///
 import hashlib
@@ -91,8 +92,8 @@ async def read(path: str):
 async def a1(email: str, **kwargs):
     await run(
         f"""
-Install `uv` (if required) and download `https://raw.githubusercontent.com/ANdIeCOOl/TDS-Project1-Ollama_FastAPI-/refs/heads/main/datagen.py` and then run the downloaded file with uv
-with `{email}` as the only argument. NOTE DO NO NEED uvicorn just uv.
+Install `uv` (if required) and run the script `https://raw.githubusercontent.com/ANdIeCOOl/TDS-Project1-Ollama_FastAPI-/refs/heads/main/datagen.py`
+with `{email}` as the only argument
 """
     )
     return email in await read("/data/format.md")
@@ -258,7 +259,7 @@ async def a10(email, **kwargs):
 async def main(email: str):
     score, total = 0, 0
     for task in [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]:
-    #for task in [a8, a9]:
+    #for task in [a3]:
         total += 1
         try:
             success = await task(email=email)

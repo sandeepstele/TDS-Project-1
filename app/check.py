@@ -1,24 +1,30 @@
+# /// script
+# dependencies = [
+#   "python-dateutil",
+# ]
+# ///
 import subprocess
-from pathlib import Path
+#from pathlib import Path
 import os
-import os
+from dateutil.parser import parse
 import json
+from typing import Optional
 
-# RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
-# RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
+RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
+RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
 
 
-# def ensure_local_path(path: str) -> str:
-#     """Ensure the path uses './data/...' locally, but '/data/...' in Docker."""
-#     if ((not RUNNING_IN_CODESPACES) and RUNNING_IN_DOCKER): 
-#         print("IN HERE",RUNNING_IN_DOCKER) # If absolute Docker path, return as-is :  # If absolute Docker path, return as-is
-#         return path
+def ensure_local_path(path: str) -> str:
+    """Ensure the path uses './data/...' locally, but '/data/...' in Docker."""
+    if ((not RUNNING_IN_CODESPACES) and RUNNING_IN_DOCKER): 
+        print("IN HERE",RUNNING_IN_DOCKER) # If absolute Docker path, return as-is :  # If absolute Docker path, return as-is
+        return path
     
-#     else:
-#         print("OUT HERE")
-#         return path.lstrip("/")  # If absolute local path, remove leading slash
-#         # return "."+path
-#         #return os.path.join("./", path) 
+    else:
+        print("OUT HERE")
+        return path.lstrip("/")  # If absolute local path, remove leading slash
+        # return "."+path
+        #return os.path.join("./", path) 
 # def check_valid_file_path(file_path: str) -> bool:
 #     """
 #     Check if the file path is valid
@@ -285,48 +291,48 @@ import json
 # with open(image_path, "rb") as file:
 #   image_data = base64.b64encode(file.read()).decode("utf-8")
 # print(image_data)
-import dotenv
-dotenv.load_dotenv()
-API_KEY = os.getenv("OPEN_AI_PROXY_TOKEN")
-URL_CHAT = os.getenv("OPEN_AI_PROXY_URL")
-URL_EMBEDDING = os.getenv("OPEN_AI_EMBEDDING_URL")
-import requests
-import base64
-def query_gpt_image(image_path: str, task: str):
-    print("🔍 Image Path:", image_path)
-    image_format = image_path.split(".")[-1]
-    with open(image_path, "rb") as file:
-        base64_image = base64.b64encode(file.read()).decode("utf-8")
-    response = requests.post(
-        URL_CHAT,
-        headers={"Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json"},
-        json={
-            "model": "gpt-4o-mini",
-            "messages": [{'role': 'system','content':"JUST GIVE the required input, as short as possible, one word if possible"},
-                {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": task},
-                    {
-                    "type": "image_url",
-                    "image_url": { "url": f"data:image/{image_format};base64,{base64_image}" }
-                    }
-                ]
-                }
-            ]
-            }
-                     )
+# import dotenv
+# dotenv.load_dotenv()
+# API_KEY = os.getenv("OPEN_AI_PROXY_TOKEN")
+# URL_CHAT = os.getenv("OPEN_AI_PROXY_URL")
+# URL_EMBEDDING = os.getenv("OPEN_AI_EMBEDDING_URL")
+# import requests
+# import base64
+# def query_gpt_image(image_path: str, task: str):
+#     print("🔍 Image Path:", image_path)
+#     image_format = image_path.split(".")[-1]
+#     with open(image_path, "rb") as file:
+#         base64_image = base64.b64encode(file.read()).decode("utf-8")
+#     response = requests.post(
+#         URL_CHAT,
+#         headers={"Authorization": f"Bearer {API_KEY}",
+#                 "Content-Type": "application/json"},
+#         json={
+#             "model": "gpt-4o-mini",
+#             "messages": [{'role': 'system','content':"JUST GIVE the required input, as short as possible, one word if possible"},
+#                 {
+#                 "role": "user",
+#                 "content": [
+#                     {"type": "text", "text": task},
+#                     {
+#                     "type": "image_url",
+#                     "image_url": { "url": f"data:image/{image_format};base64,{base64_image}" }
+#                     }
+#                 ]
+#                 }
+#             ]
+#             }
+#                      )
 
-    response.raise_for_status()
-    result = response.json() 
-    print(response)
-    print(response.json())
-    result = response.json() 
-    return result
-response = query_gpt_image("data/credit_card.png","Extract number from image")
-try:
-    print(response[])
+#     response.raise_for_status()
+#     result = response.json() 
+#     print(response)
+#     print(response.json())
+#     result = response.json() 
+#     return result
+# response = query_gpt_image("data/credit_card.png","Extract number from image")
+# try:
+#     print(response[])
 
 # def a9(email):
 #     from datagen import get_comments
@@ -338,3 +344,56 @@ try:
 #             )
 #     return response.json()
 # print(a9("23f1002382@ds.study.iitm.ac.in"))
+
+def count_occurrences(
+    input_file: str,
+    output_file: str,
+    date_component: Optional[str] = None,
+    target_value: Optional[int] = None,
+    custom_pattern: Optional[str] = None
+):
+    """
+    Count occurrences of specific date components or custom patterns in a file and write the count to an output file.
+    Handles various date formats automatically.
+
+    Parameters:
+        input_file (str): Path to the input file containing dates or text lines.
+        output_file (str): Path to the output file where the count will be written.
+        date_component (Optional[str]): The date component to check ('weekday', 'month', 'year', 'leap_year').
+        target_value (Optional[int]): The target value for the date component (e.g., 0 for Monday, 1 for Tuesday, 2 for Wednesday if weekdays, 1 for January 2 for Febuary if month, 2025 for year if year).
+        custom_pattern (Optional[str]): A regex pattern to search for in each line.
+    """  
+    count = 0
+    input_file_path = ensure_local_path(input_file)
+    output_file_path = ensure_local_path(output_file)
+    with open(input_file_path, "r") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
+
+            # Check for custom pattern
+            if custom_pattern and re.search(custom_pattern, line):
+                count += 1
+                continue
+
+            # Attempt to parse the date
+            try:
+                parsed_date = parse(line)  # Auto-detect format
+            except (ValueError, OverflowError):
+                print(f"Skipping invalid date format: {line}")
+                continue
+
+            # Check for specific date components
+            if date_component == 'weekday' and parsed_date.weekday() == target_value:
+                count += 1
+            elif date_component == 'month' and parsed_date.month == target_value:
+                count += 1
+            elif date_component == 'year' and parsed_date.year == target_value:
+                count += 1
+            elif date_component == 'leap_year' and parsed_date.year % 4 == 0 and (parsed_date.year % 100 != 0 or parsed_date.year % 400 == 0):
+                count += 1
+    return count
+function_args = {'input_file': '/data/dates.txt', 'output_file': '/data/dates-wednesdays.txt', 'date_component': 'weekday', 'target_value': 2, 'custom_pattern': None}
+a = count_occurrences(**function_args)
+print(a)
