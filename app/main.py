@@ -45,7 +45,7 @@ install_and_run_script
 
 
 load_dotenv()
-API_KEY = os.getenv("AIPROXY_TOKEN")
+API_KEY = os.getenv("OPEN_AI_PROXY_TOKEN")
 URL_CHAT = os.getenv("OPEN_AI_PROXY_URL")
 URL_EMBEDDING = os.getenv("OPEN_AI_EMBEDDING_URL")
 
@@ -56,22 +56,15 @@ RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
 logging.basicConfig(level=logging.INFO)
 
 def ensure_local_path(path: str) -> str:
-    """
-    Resolve the file path relative to the directory containing main.py.
-    Assumes that if a path starts with '/data', then it's relative to the app directory.
-    """
-    # Get the directory where this file (main.py) is located.
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    """Ensure the path uses './data/...' locally, but '/data/...' in Docker."""
+    if ((not RUNNING_IN_CODESPACES) and RUNNING_IN_DOCKER): 
+        print("IN HERE",RUNNING_IN_DOCKER) # If absolute Docker path, return as-is :  # If absolute Docker path, return as-is
+        return path
     
-    # If the path starts with '/data', remove the leading slash.
-    if path.startswith("/"):
-        path = path.lstrip("/")
-    
-    # Now, if the file is expected to be in data/ under the app directory,
-    # and if the user sends something like 'data/format.md' then this will work.
-    resolved_path = os.path.join(base_dir, path)
-    logging.info("Resolved path for '%s': %s", path, resolved_path)
-    return resolved_path
+    else:
+        logging.info(f"Inside ensure_local_path with path: {path}")
+        return path.lstrip("/")  
+
 function_mappings: Dict[str, Callable] = {
 "install_and_run_script": install_and_run_script, 
 "format_file_with_prettier": format_file_with_prettier,
@@ -137,7 +130,6 @@ def execute_function_call(function_call):
 async def run_task(task: str = Query(..., description="Plain-English task description")):
     tools = [convert_function_to_openai_schema(func) for func in function_mappings.values()]
     logging.info(len(tools))
-    #tools = [convert_function_to_openai_schema(count_occurrences)] #REMOVE THIS LATER
     logging.info(f"Inside run_task with task: {task}")
     try:
         function_call_response_message = parse_task_description(task,tools) #returns  message from response
@@ -164,7 +156,6 @@ async def read_file(path: str = Query(..., description="Path to the file to read
 
 if __name__ == "__main__":
     import uvicorn
-    #tools = [convert_function_to_openai_schema(func) for func in function_mappings.values()]
     tools = [convert_function_to_openai_schema(count_occurrences), convert_function_to_openai_schema(query_database)] #REMOVE THIS LATER
     print(tools)
     uvicorn.run(app, host="0.0.0.0", port=8000)
