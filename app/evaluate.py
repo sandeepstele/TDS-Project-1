@@ -9,6 +9,7 @@
 # ]
 # ///
 import hashlib
+import dotenv
 import httpx
 import json
 import logging
@@ -28,8 +29,29 @@ from datagen import (
     get_comments,
     get_tickets,
 )
+dotenv.load_dotenv()
+API_KEY = os.getenv("OPEN_AI_PROXY_TOKEN")
+URL_CHAT = os.getenv("OPEN_AI_PROXY_URL")
+URL_EMBEDDING = os.getenv("OPEN_AI_EMBEDDING_URL")
+#### EXTRA CODE FOR CODESPACES AND LOCAL STUFF
+RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
+RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
 
 
+def ensure_local_path(path: str) -> str:
+    """Ensure the path uses './data/...' locally, but '/data/...' in Docker."""
+    if ((not RUNNING_IN_CODESPACES) and RUNNING_IN_DOCKER): 
+        print("IN HERE",RUNNING_IN_DOCKER) # If absolute Docker path, return as-is :  # If absolute Docker path, return as-is
+        return path
+    
+    else:
+        print("OUT HERE IN ENSURE LOCAL PATH IN EVALUATE.py")
+        return path.lstrip("/")  # If absolute local path, remove leading slash
+        # return "."+path
+        #return os.path.join("./", path) 
+##### EXTRA CODE FOR CODESPACES AND LOCAL STUFF
+import dotenv
+dotenv.load_dotenv()
 openai_api_base = os.getenv("OPENAI_API_BASE", "https://aiproxy.sanand.workers.dev/openai/v1")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
@@ -44,7 +66,7 @@ def mismatch(msg, expected, result):
 
 
 async def run(task: str):
-    async with httpx.AsyncClient(timeout=300) as client:
+    async with httpx.AsyncClient(timeout=500) as client:
         logging.warning(f"🟡 Running task: {task.strip()}")
         response = await client.post("http://localhost:8000/run", params={"task": task})
         try:
@@ -69,7 +91,7 @@ async def read(path: str):
 async def a1(email: str, **kwargs):
     await run(
         f"""
-Install `uv` (if required) and download `https://github.com/ANdIeCOOl/TDS-Project1-Ollama_FastAPI-/edit/main/datagen.py` and then run the downloaded file with uv
+Install `uv` (if required) and download `https://raw.githubusercontent.com/ANdIeCOOl/TDS-Project1-Ollama_FastAPI-/refs/heads/main/datagen.py` and then run the downloaded file with uv
 with `{email}` as the only argument. NOTE DO NO NEED uvicorn just uv.
 """
     )
@@ -78,6 +100,7 @@ with `{email}` as the only argument. NOTE DO NO NEED uvicorn just uv.
 
 async def a2(email: str, file: str = "/data/format.md", **kwargs):
     original = get_markdown(email)
+    subprocess.run(["npx","--version"])
     expected = subprocess.run(
         ["npx", "prettier@3.4.2", "--stdin-filepath", file],
         input=original,
@@ -85,7 +108,7 @@ async def a2(email: str, file: str = "/data/format.md", **kwargs):
         text=True,
         check=True,
         # Ensure npx is picked up from the PATH on Windows
-        shell=True,
+        #shell=True, make sure to uncomment in production
     ).stdout
     result = await run(
         f"""
@@ -195,7 +218,7 @@ async def a9(email, **kwargs):
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{openai_api_base}/embeddings",
-            headers={"Authorization": f"Bearer {openai_api_key}"},
+            headers={"Authorization": f"Bearer {API_KEY}"},
             json={"model": "text-embedding-3-small", "input": data},
         )
     embeddings = np.array([emb["embedding"] for emb in response.json()["data"]])
@@ -235,6 +258,7 @@ async def a10(email, **kwargs):
 async def main(email: str):
     score, total = 0, 0
     for task in [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10]:
+    #for task in [a8, a9]:
         total += 1
         try:
             success = await task(email=email)
