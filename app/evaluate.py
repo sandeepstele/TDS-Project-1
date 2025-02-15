@@ -92,7 +92,7 @@ async def read(path: str):
 async def a1(email: str, **kwargs):
     await run(
         f"""
-Install `uv` (if required) and run the script `https://raw.githubusercontent.com/ANdIeCOOl/TDS-Project1-Ollama_FastAPI-/refs/heads/main/datagen.py`
+Install `uv` (if required) and run the script "https://raw.githubusercontent.com/sandeepstele/TDS-Project-1/refs/heads/main/app/datagen.py"
 with `{email}` as the only argument
 """
     )

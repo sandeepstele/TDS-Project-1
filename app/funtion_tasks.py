@@ -39,9 +39,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 from typing import Callable, get_type_hints, Dict, Any, Tuple,Optional,List
 from pydantic import create_model, BaseModel
 import re
+import pytesseract
+from PIL import Image
+
 dotenv.load_dotenv()
 
-API_KEY = os.getenv("OPEN_AI_PROXY_TOKEN")
+API_KEY = os.getenv("AIPROXY_TOKEN")
 URL_CHAT = os.getenv("OPEN_AI_PROXY_URL")
 URL_EMBEDDING = os.getenv("OPEN_AI_EMBEDDING_URL")
 RUNNING_IN_CODESPACES = "CODESPACES" in os.environ
@@ -155,11 +158,11 @@ def rewrite_sensitive_task(task: str) -> str:
     task_lower = task.lower()
     
     rewrite_map = {
-        "credit card": "longest numerical sequence",
+        "credit card": "Extract the full number exactly as shown in the image. Make sure you include every digit without any omissions or extra spaces. The output should be only the sequence of digits.",
         "cvv": "3-digit number near another number",
-        "bank account": "second longest numerical sequence",
+        "bank account": "1 longest numerical sequence",
         "routing number": "a series of numbers used for banking",
-        "social security": "9-digit numerical sequence",
+        "social security": "numerical sequence",
         "passport": "longest alphanumeric string",
         "driver's license": "structured alphanumeric code",
         "api key": "a long secret-looking string",
@@ -168,37 +171,78 @@ def rewrite_sensitive_task(task: str) -> str:
     
     for keyword, replacement in rewrite_map.items():
         if keyword in task_lower:
+            # Replace the keyword with its replacement (case-insensitive)
             return re.sub(keyword, replacement, task, flags=re.IGNORECASE)
-
     return task
 
+def extract_text_with_tesseract(image_path: str) -> str:
+    """Extract text from the image using Tesseract OCR."""
+    try:
+        image = Image.open(image_path)
+        # Optional: add preprocessing steps (e.g., converting to grayscale)
+        ocr_text = pytesseract.image_to_string(image)
+        return ocr_text.strip()
+    except Exception as e:
+        logging.error(f"Error during OCR extraction: {e}")
+        return ""
 
 def query_gpt_image(image_path: str, task: str):
+    """
+    Combine sensitive task rewriting, OCR extraction, and an LLM call.
+    
+    The function:
+      1. Rewrites the task using rewrite_sensitive_task.
+      2. Uses Tesseract to extract text from the image.
+      3. Encodes the image in base64.
+      4. Sends both the OCR result and the image (via a data URL) to the LLM.
+    """
     logging.info(f"Inside query_gpt_image with image_path: {image_path} and task: {task}")
+    
     image_format = image_path.split(".")[-1]
     clean_task = rewrite_sensitive_task(task)
+    
+    # Extract OCR text from the image
+    ocr_text = extract_text_with_tesseract(image_path)
+    logging.info(f"OCR extracted text: {ocr_text}")
+    
+    # Read and encode the image in base64
     with open(image_path, "rb") as file:
         base64_image = base64.b64encode(file.read()).decode("utf-8")
+    
+    # Build the messages with both the OCR text and image data
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Extract the required input exactly as shown. Return only the final result without additional commentary."
+            )
+        },
+        {
+            "role": "user",
+            "content": (
+                f"{clean_task}. Here is the OCR extracted text from the image: {ocr_text}"
+            )
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Additionally, please refer to the image:"},
+                {"type": "image_url", "image_url": { "url": f"data:image/{image_format};base64,{base64_image}" }}
+            ]
+        }
+    ]
+    
     response = requests.post(
         URL_CHAT,
-        headers={"Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json"
+        },
         json={
             "model": "gpt-4o-mini",
-            "messages": [{'role': 'system','content':"JUST GIVE the required input, as short as possible, one word if possible. "},
-                {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"Extract {clean_task} in image"},
-                    {
-                    "type": "image_url",
-                    "image_url": { "url": f"data:image/{image_format};base64,{base64_image}" }
-                    }
-                ]
-                }
-            ]
-            }
-                     )
+            "messages": messages
+        }
+    )
     
     response.raise_for_status()
     return response.json()
@@ -586,4 +630,3 @@ def filter_csv(input_file: str, column: str, value: str, output_file: str):
                 results.append(row)
     with open(output_file, "w") as file:
         json.dump(results, file)
-
